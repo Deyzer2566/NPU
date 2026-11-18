@@ -92,6 +92,10 @@ class NPUInstruct:
             self.nop = True
         else:
             self.nop = False
+        assert A < 2**NPUInstruct.ADDR_WIDTH, "\"A\" addr overflow"
+        assert B < 2**NPUInstruct.ADDR_WIDTH, "\"B\" addr overflow"
+        assert not we_vectorbuilder or B < 4, "Incorrect vectorbuilder index"
+        assert C < 2**NPUInstruct.ADDR_WIDTH, "\"C\" addr overflow"
     def __str__(self):
         instr = ''
         if self.nop:
