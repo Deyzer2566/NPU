@@ -6,7 +6,7 @@ logic clk=0, rst=0;
 
 // Для работы с NPU, будто в нём только одно ядро, использовать .PE_COUNT(2),
 // указав в компиляторе количество ядер равным 1
-npu #(.PE_COUNT(3), .RAM_SIZE(64)) m(.clk_i(clk), .rst_i(rst));
+npu #(.PE_COUNT(3), .RAM_SIZE(5000)) m(.clk_i(clk), .rst_i(rst));
 
 task tick;
     begin
@@ -26,7 +26,7 @@ initial begin
     clk = 0;
     rst = 0;
     m.pe_inst[1].pe_core.instruction_mem[0] = 41'h0;
-    m.pe_inst[1].pe_core.instruction_mem[1] = 41'h1 << (30+4+3); // На случай, если должно быть только 1 ядро
+    m.pe_inst[1].pe_core.instruction_mem[1] = 41'h1 << (m.pe_inst[1].pe_core.ie.INSTRUCTION_WIDTH-4); // На случай, если должно быть только 1 ядро
     `include "gen.sv" // Импортируем скомпилированную программу
     for(int i = 0;i<inst_count+1;i++) begin // inst_count заполняется в gen.sv
         tick();

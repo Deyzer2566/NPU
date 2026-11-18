@@ -300,7 +300,7 @@ module pe
         if (rst_inst) begin
             pc <= 0;
         end
-        if (!disable_clock) begin
+        else if (!disable_clock) begin
             pc <= pc+1;
         end
     end

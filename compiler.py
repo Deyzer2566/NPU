@@ -9,7 +9,7 @@ model = [
     ('in',[[(1)<<4 for j in range(9)]]), # это вход
     ('sig',[[0xef for i in range(9)]]), # sigmoid
     ('mul',[[1<<4 for j in range(9)] for i in range(3)]),
-    ('mul', [[(-1<<4)&0xff,0,0,0][::-1],[0,(-1<<4)&0xff,0,0][::-1],[0,0,(-1<<4)&0xff,0][::-1]]) # инвертируем знак, унможив на -1
+    ('mul', [[(-1<<4)&0xff,0,0,0],[0,(-1<<4)&0xff,0,0],[0,0,(-1<<4)&0xff,0]]) # инвертируем знак, унможив на -1
 ]
 
 sm_layout = [[0 for j in range(4)] for i in range(1000)]
@@ -23,9 +23,9 @@ for _,layer in model:
         kk = sm_ind
         for j in range(0,len(column), 4):
             if j+4 > len(column): # размер кусочка не кратен размеру слова
-                sm_layout[sm_ind] = column[j:j+4] + [0 for i in range(4-(len(column)-j))]
+                sm_layout[sm_ind] = (column[j:j+4] + [0 for i in range(4-(len(column)-j))])[::-1]
             else:
-                sm_layout[sm_ind] = column[j:j+4]
+                sm_layout[sm_ind] = column[j:j+4][::-1]
             sm_ind += 1
         inds_layer += [list(range(kk,sm_ind))]
     layers_indx_sm += [inds_layer]
@@ -73,8 +73,10 @@ class PE_SUM_State(Enum):
     SAVE_ACC = 4
 
 class NPUInstruct:
+    ADDR_WIDTH = 10
+    INST_LEN = ADDR_WIDTH*3+10+1
     def __init__(self,A,B,C,source_selector,save_to_shared,save_to_buffout,
-                 reset_vb,disable_clock,use_sm,we_vectorbuilder,sm_fastdata):
+                 reset_vb,disable_clock,use_sm,we_vectorbuilder,sm_fastdata,nop=False):
         self.A = A
         self.B = B
         self.C = C
@@ -86,8 +88,14 @@ class NPUInstruct:
         self.use_sm = use_sm
         self.we_vectorbuilder = we_vectorbuilder
         self.sm_fastdata = sm_fastdata
+        if nop:
+            self.nop = True
+        else:
+            self.nop = False
     def __str__(self):
         instr = ''
+        if self.nop:
+            return 'NOP'
         match(self.source_selector):
             case Source.SYSTOLIC_ARRAY:
                 instr = (f'MUL A={self.A} B={self.B} C={self.C}')
@@ -104,16 +112,16 @@ class NPUInstruct:
         return instr + (f' [{self.A}]->vector[{self.B}]' if self.we_vectorbuilder else '') +(' d_c' if self.disable_clock else '') + (f' ->SM[{self.B}]' if self.save_to_shared else '') + (' save_rbout' if self.save_to_buffout else '') + (' vector={0,0,0,0}' if self.reset_vb else '')
     def __int__(self):
         return self.A | \
-            self.B << 10| \
-            self.C << 20 | \
-            self.source_selector.value << 30 | \
-            self.save_to_shared << 34| \
-            self.save_to_buffout << 35| \
-            self.reset_vb << 36| \
-            self.disable_clock << 37| \
-            self.use_sm << 38| \
-            self.we_vectorbuilder << 39| \
-            self.sm_fastdata << 40
+            self.B << NPUInstruct.ADDR_WIDTH | \
+            self.C << (NPUInstruct.ADDR_WIDTH*2) | \
+            self.source_selector.value << (NPUInstruct.ADDR_WIDTH*3) | \
+            self.save_to_shared << (NPUInstruct.ADDR_WIDTH*3+4)| \
+            self.save_to_buffout << (NPUInstruct.ADDR_WIDTH*3+5)| \
+            self.reset_vb << (NPUInstruct.ADDR_WIDTH*3+6)| \
+            self.disable_clock << (NPUInstruct.ADDR_WIDTH*3+7)| \
+            self.use_sm << (NPUInstruct.ADDR_WIDTH*3+8)| \
+            self.we_vectorbuilder << (NPUInstruct.ADDR_WIDTH*3+9)| \
+            self.sm_fastdata << (NPUInstruct.ADDR_WIDTH*3+10)
             
 class Source(Enum):
     SYSTOLIC_ARRAY = 0
@@ -152,7 +160,7 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
     for i in range(PEs):
         unused = get_first_free_addr_lm(i)
         instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, True, False, False, False, False)]
-        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, True, False, False, False, False, False)]
+        instructs[i] += [NPUInstruct(unused, unused, unused, Source.VECTOR_BUILDER, False, True, False, False, False, False, False)]
     def make_ld1(instructs, pe, sm_addr, lm_addr):
         # instructs[pe] += [('load', sm_addr, lm_addr)]
         instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False, False)]
@@ -171,7 +179,7 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
     def make_nop(instructs, pe):
         unused_addr = get_first_free_addr_lm(pe)
         # instructs[pe] += [('mul', unused_addr, unused_addr, unused_addr)]
-        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
+        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
         states[pe][0] = PE_State.FREE
     def make_sum(instructs, pe, lm_addr):
         # instructs[pe] += [('sum1', lm_addr, 0)]
@@ -256,7 +264,7 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
         def make_nop(instructs, pe):
             addr = get_first_free_addr_lm(pe)
             # instructs[pe] += [('mul', addr, addr, addr)]
-            instructs[pe] += [NPUInstruct(addr, addr, addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
+            instructs[pe] += [NPUInstruct(addr, addr, addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
         def make_save_acc(instructs, pe):
             # instructs[pe] += [('sum4', part_sums[pe], 'rb_out')]
             unused = get_first_free_addr_lm(pe)
@@ -334,7 +342,7 @@ def make_sigmoid(addr1, l, sm_addr_out):
     def make_nop(instructs, pe):
         unused_addr = get_first_free_addr_lm(pe)
         # instructs[pe] += [('mul', unused_addr, unused_addr, unused_addr)]
-        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
+        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
         states[pe][0] = PE_State.FREE
     def make_ld(instructs, pe, sm_addr, lm_addr):
         instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False, False)]
@@ -394,7 +402,7 @@ def make_compact(addr, l, out_addr):
     def make_nop(instructs, pe):
         unused_addr = get_first_free_addr_lm(pe)
         # instructs[pe] += [('mul', unused_addr, unused_addr, unused_addr)]
-        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
+        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
         states[pe][0] = PE_State.FREE
     def make_load(instructs, pe, sm_addr, lm_addr, clear_vector):
         instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, clear_vector, False, True, False, False)]
@@ -473,8 +481,9 @@ for ind, layer in enumerate(model):
     elif layer[0] == 'mul':
         ll = len(layer[1]) # количество столбцов матрицы
         l = len(layer[1][0]) # количество строк матрицы
-        out_inds = [sm_ind + i for i in range(ll)]
-        sm_ind += ll
+        padding = (4-ll%4)%4
+        out_inds = [sm_ind + i for i in range(ll+ padding)]
+        sm_ind += ll + padding
         muls_inds += [(0,out_inds)]
         
         for l2 in range(ll):
@@ -492,11 +501,15 @@ for i in range(PEs):
     instructions[i][-1].disable_clock=True
 
 out_addr, out_len = prev_out_addr, len(layers_indx_sm[-1])//4 + (1 if len(layers_indx_sm[-1]) %4 != 0 else 0)
-print(f'out_addr={out_addr}, len={out_len}')
+print(f'Адрес выхода={out_addr}, Размер (в векторах по 4 значения)={out_len}')
 
-# for i in range(100,len(instructions[0])):
-#     print(i+1,[str(instructions[pe][i]) for pe in range(PEs)])
-# print([len(instructions[i]) for i in range(PEs)])
+# Если надо вывести инструкции
+# for i in range(0, len(instructions[0])):
+    # print(i+1,[str(instructions[pe][i]) for pe in range(PEs)])
+
+nops = [len(list(filter(lambda x:x=='NOP', map(str, instructions[pe])))) for pe in range(PEs)]
+print("Загруженность ядер", ' '.join([f'{100-i/len(instructions[0])*100:.0f}%' for i in nops]))
+print("Требует памяти:", sm_ind,'32битных слов или ',sm_ind*4,'байт')
 
 with open('gen.sv','w') as f:
     print(f'inst_count = {len(instructions[0])};', file=f)
@@ -510,5 +523,21 @@ with open('gen.sv','w') as f:
     pes_prefix = 'm.pe_inst'
     for pe in range(PEs):
         for ind, i in enumerate(instructions[pe]):
-            print(pes_prefix+f'[{pe}].pe_core.instruction_mem[{ind+1}] = 41\'h{hex(int(i))[2:]};', file=f)
+            print(pes_prefix+f'[{pe}].pe_core.instruction_mem[{ind+1}] = {NPUInstruct.INST_LEN}\'h{hex(int(i))[2:]};', file=f)
         print(file=f)
+
+    # Здесь можно объявить двумерный массив tests - 
+    # массив тестовых входов для проверки симуляции.
+    # Тогда будет сгенерирован код для прогона
+    # нескольких входных значений
+#     for i, test in enumerate(tests):
+#         for val in range(0,len(test),4):
+#             arr = test[val:val+4]
+#             arr += [0]*(4-len(arr))
+#             arr = sum([(i&0xff)*(1<<(8*j)) for j,i in enumerate(arr[::-1])])
+#             print(sm_prefix+f'[{layers_indx_sm[0][0][0] + val//4}] = 32\'h{hex(arr)[2:]};', file=f)
+#         print('rst=1;\ntick();\nrst=0;\n$display("%d", m.pe_inst[0].pe_core.pc);\nfor(int i = 0;i<inst_count+1;i++) begin\ntick();\nend', file=f)
+#         print('''
+# for(int i = out_addr; i < out_addr + out_len; i++)
+#         $display("%x %x %x %x", m.shared_mem.ram[i][31:24], m.shared_mem.ram[i][23:16], m.shared_mem.ram[i][15:8], m.shared_mem.ram[i][7:0]);
+# ''', file=f)
