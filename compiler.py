@@ -1,7 +1,7 @@
 import random
 from enum import Enum
 PEs = 3
-PE_LM_Size = 1024
+PE_LM_Size = 5 # 4 для инструкций + 1 для NOP'ов
 
 # модель в формате torch:
 # Sequential(nn.Sigmoid(), nn.Linear(9, 3), nn.Linear(3, 3))
@@ -41,7 +41,7 @@ def get_first_free_addr_lm(pe_num):
     for i in range(PE_LM_Size):
         if free_memories[pe_num][i]:
             return i
-    return -1
+    raise Exception("No enough memory")
 def alloc_lm(pe_num):
     addr = get_first_free_addr_lm(pe_num)
     assert addr != -1, "Попытка занять используемую память"
@@ -294,6 +294,8 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
             pe = (pe+1)%PEs
         for pe in range(pes_in_use,PEs_sources_count):
             free_lm(pe, part_sums[pe])
+        for pe in range(pes_in_use):
+            free_lm(pe, received_sums[pe])
         if PEs_sources_count > 2:
             r = reduce_sum(pes_in_use)
             for i in range(PEs):
@@ -318,6 +320,7 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
         unused = get_first_free_addr_lm(i)
         instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
     free_lm(0, part_sums[0])
+    assert all([all(i) for i in free_memories]), 'Не вся память освобождена!'
 
     return instructs
 
@@ -336,7 +339,7 @@ def make_sigmoid(addr1, l, sm_addr_out):
     states = [[PE_State.FREE,PE_SIGM_State.FREE] for pe in range(PEs)]
     pe = 0
     instructs = [[] for pe in range(PEs)]
-    results = [[alloc_lm(pe) for i in range(len(occupies[pe]))] for pe in range(PEs)]
+    results = [alloc_lm(pe) for pe in range(PEs)]
     def is_mem_free(states):
         return all(map(lambda x: x != PE_State.MEM, states))
     def make_nop(instructs, pe):
@@ -359,12 +362,12 @@ def make_sigmoid(addr1, l, sm_addr_out):
             addr_pe = addr1 + occupies[pe][steps[pe]] # sm
             if states[pe][1] == PE_SIGM_State.FREE:
                 if is_mem_free(map(lambda x: x[0], states[:pe])):
-                    make_ld(instructs, pe, addr_pe, results[pe][steps[pe]])
+                    make_ld(instructs, pe, addr_pe, results[pe])
                 else:
                     make_nop(instructs, pe)
             elif states[pe][1] == PE_SIGM_State.LOAD:
                 if is_mem_free(map(lambda x: x[0], states[:pe])):
-                    make_save(instructs, pe, results[pe][steps[pe]], sm_addr_out+occupies[pe][steps[pe]])
+                    make_save(instructs, pe, results[pe], sm_addr_out+occupies[pe][steps[pe]])
                 else:
                     make_nop(instructs, pe)
             elif states[pe][1] == PE_SIGM_State.SAVE:
@@ -372,6 +375,9 @@ def make_sigmoid(addr1, l, sm_addr_out):
                 states[pe] = [PE_State.FREE, PE_SIGM_State.FREE]
                 continue
         pe = (pe+1)%PEs
+    for i, addr in enumerate(results):
+        free_lm(i, addr)
+    assert all([all(i) for i in free_memories]), 'Не вся память освобождена!'
     return instructs
 
 class PE_COMPACT_State(Enum):
@@ -396,7 +402,7 @@ def make_compact(addr, l, out_addr):
     states = [[PE_State.FREE,PE_COMPACT_State.FREE] for pe in range(PEs)]
     pe = 0
     instructs = [[] for pe in range(PEs)]
-    results = [[alloc_lm(pe) for i in range(len(occupies[pe]))] for pe in range(PEs)]
+    results = [alloc_lm(pe) for pe in range(PEs)]
     def is_mem_free(states):
         return all(map(lambda x: x != PE_State.MEM, states))
     def make_nop(instructs, pe):
@@ -425,11 +431,11 @@ def make_compact(addr, l, out_addr):
             addr_pe = addr + occupies[pe][steps[pe]]*4+sub_steps[pe]
             if states[pe][1] == PE_COMPACT_State.FREE:
                 if is_mem_free(map(lambda x:x[0],states[:pe])):
-                    make_load(instructs, pe, addr_pe, results[pe][steps[pe]], sub_steps[pe]==0)
+                    make_load(instructs, pe, addr_pe, results[pe], sub_steps[pe]==0)
                 else:
                     make_nop(instructs, pe)
             elif states[pe][1] == PE_COMPACT_State.LOAD:
-                make_save_to_vector(instructs, pe, results[pe][steps[pe]], sub_steps[pe])
+                make_save_to_vector(instructs, pe, results[pe], sub_steps[pe])
                 sub_steps[pe]+=1
             elif states[pe][1] == PE_COMPACT_State.SAVE_TO_VECTOR:
                 if sub_steps[pe] == 4:
@@ -443,9 +449,9 @@ def make_compact(addr, l, out_addr):
                 steps[pe] += 1
                 continue
         pe = (pe+1)%PEs
-    for pe, addrs in enumerate(results):
-        for addr in addrs:
-            free_lm(pe, addr)
+    for pe, addr in enumerate(results):
+        free_lm(pe, addr)
+    assert all([all(i) for i in free_memories]), 'Не вся память освобождена!'
     return instructs
 #
 # тесты функций
@@ -510,6 +516,7 @@ print(f'Адрес выхода={out_addr}, Размер (в векторах п
 nops = [len(list(filter(lambda x:x=='NOP', map(str, instructions[pe])))) for pe in range(PEs)]
 print("Загруженность ядер", ' '.join([f'{100-i/len(instructions[0])*100:.0f}%' for i in nops]))
 print("Требует памяти:", sm_ind,'32битных слов или ',sm_ind*4,'байт')
+print("Требуется тактов:", len(instructions[0]))
 
 with open('gen.sv','w') as f:
     print(f'inst_count = {len(instructions[0])};', file=f)
