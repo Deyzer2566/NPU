@@ -510,7 +510,7 @@ for ind, layer in enumerate(model):
 for i in range(PEs):
     instructions[i][-1].disable_clock=True
 
-out_addr, out_len = prev_out_addr, len(layers_indx_sm[-1])//4 + (1 if len(layers_indx_sm[-1]) %4 != 0 else 0)
+out_addr, out_len = prev_out_addr, len(layers_indx_sm[-1][0])
 print(f'Адрес выхода={out_addr}, Размер (в векторах по 4 значения)={out_len}')
 
 # Если надо вывести инструкции
@@ -550,5 +550,6 @@ with open('gen.sv','w') as f:
 #         print('rst=1;\ntick();\nrst=0;\n$display("%d", m.pe_inst[0].pe_core.pc);\nfor(int i = 0;i<inst_count+1;i++) begin\ntick();\nend', file=f)
 #         print('''
 # for(int i = out_addr; i < out_addr + out_len; i++)
-#         $display("%x %x %x %x", m.shared_mem.ram[i][31:24], m.shared_mem.ram[i][23:16], m.shared_mem.ram[i][15:8], m.shared_mem.ram[i][7:0]);
+#         $write("%x %x %x %x ", m.shared_mem.ram[i][31:24], m.shared_mem.ram[i][23:16], m.shared_mem.ram[i][15:8], m.shared_mem.ram[i][7:0]);
+# $display("");
 # ''', file=f)

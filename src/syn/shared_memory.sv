@@ -36,7 +36,7 @@ module memory
         m.fast_r_rdata = {ram[m.fast_r_addr], ram[m.fast_r_addr+1], ram[m.fast_r_addr+2], ram[m.fast_r_addr+3]};
     end
     
-    always @(negedge clk_i) begin
+    always @(posedge clk_i) begin
         if (m.we) begin
             ram[m.addr] <= m.wdata;
         end

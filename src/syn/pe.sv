@@ -74,16 +74,16 @@ module vector_builder (
 );
 
     logic[1:0] prev_ind;
-    always @(negedge clk_i, posedge rst_i) begin
+    always @(posedge clk_i) begin
         if(rst_i) begin
             buff <= {8'd0, 8'd0, 8'd0, 8'd0};
-            prev_ind = 2'd0;
+            prev_ind <= 2'd0;
         end
-        if(we) begin
+        else if(we) begin
             buff[ind] <= x;
             prev_ind <= ind;
             if(ind == 0 && prev_ind != 0) begin
-                buff[1:3] = {8'd0,8'd0,8'd0};
+                buff[1:3] <= {8'd0,8'd0,8'd0};
             end
         end
     end
@@ -124,7 +124,7 @@ module local_memory
         mem.rdata2 = ram[mem.addr2];
     end
 
-    always @(negedge clk_i) begin
+    always @(posedge clk_i) begin
         if (mem.we) begin
             ram[mem.wdata_addr] <= mem.wdata;
         end
@@ -192,7 +192,7 @@ module instruction_executor
 
     assign sm.fast_r_addr = B & {32{sm_fastdata}};
     logic signed [7:0] sm_long_buff[0:3][0:3];
-    always @(negedge clk_i) begin
+    always @(posedge clk_i) begin
         if (sm_fastdata) begin
             for (int i = 0;i<4; i++) begin
                 for (int j = 0;j < 4;j++) begin
@@ -248,9 +248,9 @@ module instruction_executor
             selected_source_val[0], selected_source_val[1],
             selected_source_val[2], selected_source_val[3]
         } & {32{save_to_shared}};
-    always @(negedge clk_i) begin
+    always @(posedge clk_i) begin
         if(save_to_buffout) begin
-            rb_out.out = selected_source_val;
+            rb_out.out <= selected_source_val;
         end
     end
 
