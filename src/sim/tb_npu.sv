@@ -25,8 +25,7 @@ initial begin
     $dumpvars();
     clk = 0;
     rst = 0;
-    m.pe_inst[1].pe_core.instruction_mem[0] = 41'h0;
-    m.pe_inst[1].pe_core.instruction_mem[1] = 41'h1 << (m.pe_inst[1].pe_core.ie.INSTRUCTION_WIDTH-4); // На случай, если должно быть только 1 ядро
+    m.pe_inst[1].pe_core.instruction_mem[0] = 39'h1 << (m.pe_inst[1].pe_core.ie.INSTRUCTION_WIDTH-4); // На случай, если должно быть только 1 ядро
     `include "gen.sv" // Импортируем скомпилированную программу
     for(int i = 0;i<inst_count+1;i++) begin // inst_count заполняется в gen.sv
         tick();

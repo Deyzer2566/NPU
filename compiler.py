@@ -74,9 +74,9 @@ class PE_SUM_State(Enum):
 
 class NPUInstruct:
     ADDR_WIDTH = 10
-    INST_LEN = ADDR_WIDTH*3+10+1
+    INST_LEN = ADDR_WIDTH*3+3+1+1+1+1+1+1
     def __init__(self,A,B,C,source_selector,save_to_shared,save_to_buffout,
-                 reset_vb,disable_clock,use_sm,we_vectorbuilder,sm_fastdata,nop=False):
+                 reset_vb,disable_clock,use_sm,we_vectorbuilder,nop=False):
         self.A = A
         self.B = B
         self.C = C
@@ -87,7 +87,6 @@ class NPUInstruct:
         self.disable_clock = disable_clock
         self.use_sm = use_sm
         self.we_vectorbuilder = we_vectorbuilder
-        self.sm_fastdata = sm_fastdata
         if nop:
             self.nop = True
         else:
@@ -119,13 +118,12 @@ class NPUInstruct:
             self.B << NPUInstruct.ADDR_WIDTH | \
             self.C << (NPUInstruct.ADDR_WIDTH*2) | \
             self.source_selector.value << (NPUInstruct.ADDR_WIDTH*3) | \
-            self.save_to_shared << (NPUInstruct.ADDR_WIDTH*3+4)| \
-            self.save_to_buffout << (NPUInstruct.ADDR_WIDTH*3+5)| \
-            self.reset_vb << (NPUInstruct.ADDR_WIDTH*3+6)| \
-            self.disable_clock << (NPUInstruct.ADDR_WIDTH*3+7)| \
-            self.use_sm << (NPUInstruct.ADDR_WIDTH*3+8)| \
-            self.we_vectorbuilder << (NPUInstruct.ADDR_WIDTH*3+9)| \
-            self.sm_fastdata << (NPUInstruct.ADDR_WIDTH*3+10)
+            self.save_to_shared << (NPUInstruct.ADDR_WIDTH*3+3)| \
+            self.save_to_buffout << (NPUInstruct.ADDR_WIDTH*3+4)| \
+            self.reset_vb << (NPUInstruct.ADDR_WIDTH*3+5)| \
+            self.disable_clock << (NPUInstruct.ADDR_WIDTH*3+6)| \
+            self.use_sm << (NPUInstruct.ADDR_WIDTH*3+7)| \
+            self.we_vectorbuilder << (NPUInstruct.ADDR_WIDTH*3+8)
             
 class Source(Enum):
     SYSTOLIC_ARRAY = 0
@@ -163,47 +161,47 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
     instructs = [[] for pe in range(PEs)]
     for i in range(PEs):
         unused = get_first_free_addr_lm(i)
-        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, True, False, False, False, False)]
-        instructs[i] += [NPUInstruct(unused, unused, unused, Source.VECTOR_BUILDER, False, True, False, False, False, False, False)]
+        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, True, False, False, False)]
+        instructs[i] += [NPUInstruct(unused, unused, unused, Source.VECTOR_BUILDER, False, True, False, False, False, False)]
     def make_ld1(instructs, pe, sm_addr, lm_addr):
         # instructs[pe] += [('load', sm_addr, lm_addr)]
-        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False, False)]
+        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False)]
         states[pe][0] = PE_State.MEM
         states[pe][1] = PE_MUL_State.LOAD_OP1
     def make_ld2(instructs, pe, sm_addr, lm_addr):
         # instructs[pe] += [('load', sm_addr, lm_addr)]
-        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False, False)]
+        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False)]
         states[pe][0] = PE_State.MEM
         states[pe][1] = PE_MUL_State.LOAD_OP2
     def make_mul(instructs, pe, lm_addr1, lm_addr2, lm_dest):
         # instructs[pe] += [('mul', lm_addr1, lm_addr2, lm_dest)]
-        instructs[pe] += [NPUInstruct(lm_addr1, lm_addr2, lm_dest, Source.SYSTOLIC_ARRAY, False, False, True, False, False, False, False)]
+        instructs[pe] += [NPUInstruct(lm_addr1, lm_addr2, lm_dest, Source.SYSTOLIC_ARRAY, False, False, True, False, False, False)]
         states[pe][0] = PE_State.OCCUPIED
         states[pe][1] = PE_MUL_State.MUL
     def make_nop(instructs, pe):
         unused_addr = get_first_free_addr_lm(pe)
         # instructs[pe] += [('mul', unused_addr, unused_addr, unused_addr)]
-        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
+        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, nop = True)]
         states[pe][0] = PE_State.FREE
     def make_sum(instructs, pe, lm_addr):
         # instructs[pe] += [('sum1', lm_addr, 0)]
         unused_addr = get_first_free_addr_lm(pe)
-        instructs[pe] += [NPUInstruct(lm_addr, 0, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True, False)]
+        instructs[pe] += [NPUInstruct(lm_addr, 0, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True)]
         states[pe][0] = PE_State.OCCUPIED
         states[pe][1] = PE_MUL_State.SUM
     def make_acc(instructs, pe, lm_addr):
         # instructs[pe] += [('sum1', lm_addr, 1)]
         unused_addr = get_first_free_addr_lm(pe)
-        instructs[pe] += [NPUInstruct(lm_addr, 1, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True, False)]
+        instructs[pe] += [NPUInstruct(lm_addr, 1, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True)]
         states[pe][0] = PE_State.OCCUPIED
         states[pe][1] = PE_MUL_State.ACC
     def make_save_acc(instructs, pe, lm_addr, rb_out):
         if rb_out:
             # instructs[pe] += [('sum4', lm_addr, 'rb_out')]
-            instructs[pe] += [NPUInstruct(0, 1, lm_addr, Source.VECTOR_BUILDER, False, True, False, False, False, False, False)]
+            instructs[pe] += [NPUInstruct(0, 1, lm_addr, Source.VECTOR_BUILDER, False, True, False, False, False, False)]
         else:
             # instructs[pe] += [('sum4', lm_addr)]
-            instructs[pe] += [NPUInstruct(0, 1, lm_addr, Source.VECTOR_BUILDER, False, False, False, False, False, False, False)]
+            instructs[pe] += [NPUInstruct(0, 1, lm_addr, Source.VECTOR_BUILDER, False, False, False, False, False, False)]
         states[pe][0] = PE_State.OCCUPIED
         states[pe][1] = PE_MUL_State.SAVE_ACC
     def is_mem_free(states):
@@ -256,23 +254,23 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
         instructs = [[] for pe in range(PEs)]
         def make_ld_rbin(instructs, pe, rb_in_ind, addr):
             # instructs[pe] += [('load_rbin', rb_in_ind if pe > rb_in_ind else rb_in_ind-1, addr)]
-            instructs[pe] += [NPUInstruct(0, rb_in_ind if pe > rb_in_ind else rb_in_ind-1, addr, Source.RB_IN, False, False, True, False, False, False, False)]
+            instructs[pe] += [NPUInstruct(0, rb_in_ind if pe > rb_in_ind else rb_in_ind-1, addr, Source.RB_IN, False, False, True, False, False, False)]
         def make_load_op1(instructs, pe):
             # instructs[pe] += [('sum1', part_sums[pe], 0)]
             unused_addr = get_first_free_addr_lm(pe)
-            instructs[pe] += [NPUInstruct(part_sums[pe], 0, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True, False)]
+            instructs[pe] += [NPUInstruct(part_sums[pe], 0, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True)]
         def make_load_op2(instructs, pe):
             # instructs[pe] += [('sum1', received_sums[pe], 1)]
             unused_addr = get_first_free_addr_lm(pe)
-            instructs[pe] += [NPUInstruct(received_sums[pe], 1, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True, False)]
+            instructs[pe] += [NPUInstruct(received_sums[pe], 1, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True)]
         def make_nop(instructs, pe):
             addr = get_first_free_addr_lm(pe)
             # instructs[pe] += [('mul', addr, addr, addr)]
-            instructs[pe] += [NPUInstruct(addr, addr, addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
+            instructs[pe] += [NPUInstruct(addr, addr, addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, nop = True)]
         def make_save_acc(instructs, pe):
             # instructs[pe] += [('sum4', part_sums[pe], 'rb_out')]
             unused = get_first_free_addr_lm(pe)
-            instructs[pe] += [NPUInstruct(unused, unused, part_sums[pe], Source.VECTOR_BUILDER, False, False, False, False, False, False, False)]
+            instructs[pe] += [NPUInstruct(unused, unused, part_sums[pe], Source.VECTOR_BUILDER, False, False, False, False, False, False)]
         state = PE_SUM_State.FREE
         pe = 0
         while state != PE_SUM_State.SAVE_ACC or pe != 0:
@@ -311,18 +309,18 @@ def mul_col_col(addr1, addr2, l, sm_addr_out):
     # pe[0].lm[0] содержит вектор типа [num1, num2, 0, 0]
     # instructs[0] += [('sum1', part_sums[0], 0)]
     unused = get_first_free_addr_lm(0)
-    instructs[0] += [NPUInstruct(part_sums[0], 0, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True, False)]
+    instructs[0] += [NPUInstruct(part_sums[0], 0, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True)]
     for i in range(1, PEs):
         # instructs[i] += [('nop',)]
         unused = get_first_free_addr_lm(i)
-        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
+        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False)]
 
-    instructs[0] += [NPUInstruct(0, sm_addr_out, part_sums[0], Source.VECTOR_BUILDER, True, False, False, False, False, False, False)]
+    instructs[0] += [NPUInstruct(0, sm_addr_out, part_sums[0], Source.VECTOR_BUILDER, True, False, False, False, False, False)]
     
     for i in range(1, PEs):
         # instructs[i] += [('nop',)]
         unused = get_first_free_addr_lm(i)
-        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False)]
+        instructs[i] += [NPUInstruct(unused, unused, unused, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False)]
     free_lm(0, part_sums[0])
     assert all([all(i) for i in free_memories]), 'Не вся память освобождена!'
 
@@ -349,14 +347,14 @@ def make_sigmoid(addr1, l, sm_addr_out):
     def make_nop(instructs, pe):
         unused_addr = get_first_free_addr_lm(pe)
         # instructs[pe] += [('mul', unused_addr, unused_addr, unused_addr)]
-        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
+        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, nop = True)]
         states[pe][0] = PE_State.FREE
     def make_ld(instructs, pe, sm_addr, lm_addr):
-        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False, False)]
+        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, False, False, True, False)]
         states[pe][0] = PE_State.MEM
         states[pe][1] = PE_SIGM_State.LOAD
     def make_save(instructs, pe, lm_addr, sm_addr):
-        instructs[pe] += [NPUInstruct(lm_addr, sm_addr, lm_addr, Source.SIGMOID, True, False, False, False, False, False, False)]
+        instructs[pe] += [NPUInstruct(lm_addr, sm_addr, lm_addr, Source.SIGMOID, True, False, False, False, False, False)]
         states[pe][0] = PE_State.MEM
         states[pe][1] = PE_SIGM_State.SAVE
     while steps != [len(i) for i in occupies] or pe != 0:
@@ -412,20 +410,20 @@ def make_compact(addr, l, out_addr):
     def make_nop(instructs, pe):
         unused_addr = get_first_free_addr_lm(pe)
         # instructs[pe] += [('mul', unused_addr, unused_addr, unused_addr)]
-        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, False, True)]
+        instructs[pe] += [NPUInstruct(unused_addr, unused_addr, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, False, nop = True)]
         states[pe][0] = PE_State.FREE
     def make_load(instructs, pe, sm_addr, lm_addr, clear_vector):
-        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, clear_vector, False, True, False, False)]
+        instructs[pe] += [NPUInstruct(0, sm_addr, lm_addr, Source.SM, False, False, clear_vector, False, True, False)]
         states[pe][0] = PE_State.MEM
         states[pe][1] = PE_COMPACT_State.LOAD
     def make_save_to_vector(instructs, pe, lm_addr, v_ind):
         unused_addr = get_first_free_addr_lm(pe)
-        instructs[pe] += [NPUInstruct(lm_addr, v_ind, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True, False)]
+        instructs[pe] += [NPUInstruct(lm_addr, v_ind, unused_addr, Source.SYSTOLIC_ARRAY, False, False, False, False, False, True)]
         states[pe][0] = PE_State.OCCUPIED
         states[pe][1] = PE_COMPACT_State.SAVE_TO_VECTOR
     def make_save(instructs, pe, sm_addr):
         unused = get_first_free_addr_lm(pe)
-        instructs[pe] += [NPUInstruct(unused, sm_addr, unused, Source.VECTOR_BUILDER, True, False, False, False, False, False, False)]
+        instructs[pe] += [NPUInstruct(unused, sm_addr, unused, Source.VECTOR_BUILDER, True, False, False, False, False, False)]
         states[pe][0] = PE_State.MEM
         states[pe][1] = PE_COMPACT_State.SAVE_TO_SHARED
     while steps != [len(i) for i in occupies] or pe != 0:
@@ -534,7 +532,7 @@ with open('gen.sv','w') as f:
     pes_prefix = 'm.pe_inst'
     for pe in range(PEs):
         for ind, i in enumerate(instructions[pe]):
-            print(pes_prefix+f'[{pe}].pe_core.instruction_mem[{ind+1}] = {NPUInstruct.INST_LEN}\'h{hex(int(i))[2:]};', file=f)
+            print(pes_prefix+f'[{pe}].pe_core.instruction_mem[{ind}] = {NPUInstruct.INST_LEN}\'h{hex(int(i))[2:]};', file=f)
         print(file=f)
 
     # Здесь можно объявить двумерный массив tests - 

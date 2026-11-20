@@ -135,8 +135,8 @@ endmodule
 module instruction_executor
 # (
     parameter ADDR_WIDTH = 10,
-    parameter SOURCES_COUNT = 9,
-    parameter INSTRUCTION_WIDTH = ADDR_WIDTH*3 + $clog2(SOURCES_COUNT) + 7,
+    parameter SOURCES_COUNT = 5,
+    parameter INSTRUCTION_WIDTH = ADDR_WIDTH*3 + $clog2(SOURCES_COUNT) + 6,
     parameter PE_COUNT = 3
 ) (
     input [INSTRUCTION_WIDTH-1:0] instruction,
@@ -156,7 +156,6 @@ module instruction_executor
     logic reset_vb;
     logic use_sm;
     logic we_vectorbuilder;
-    logic sm_fastdata;
 
     always @* begin
         A = {{(32-ADDR_WIDTH){1'b0}}, instruction[ADDR_WIDTH-1:0]};
@@ -169,7 +168,6 @@ module instruction_executor
         disable_clock= instruction[ADDR_WIDTH*3+$clog2(SOURCES_COUNT)+3];
         use_sm = instruction[ADDR_WIDTH*3+$clog2(SOURCES_COUNT)+4];
         we_vectorbuilder = instruction[ADDR_WIDTH*3+$clog2(SOURCES_COUNT)+5];
-        sm_fastdata = instruction[ADDR_WIDTH*3+$clog2(SOURCES_COUNT)+6];
     end
     
     logic signed [7:0] vecA [0:3];
@@ -189,18 +187,6 @@ module instruction_executor
     
     assign sm.addr = B & {32{use_sm | save_to_shared}};
     assign sm.we = save_to_shared;
-
-    assign sm.fast_r_addr = B & {32{sm_fastdata}};
-    logic signed [7:0] sm_long_buff[0:3][0:3];
-    always @(posedge clk_i) begin
-        if (sm_fastdata) begin
-            for (int i = 0;i<4; i++) begin
-                for (int j = 0;j < 4;j++) begin
-                    sm_long_buff[i][j] <= sm.fast_r_rdata[127-(32*i+j*8)-:8];
-                end
-            end
-        end
-    end
 
     logic signed [7:0] sources_out [0:SOURCES_COUNT-1] [0:3];
 
@@ -222,12 +208,6 @@ module instruction_executor
             sources_out[4] = rb_ins[B];
         end else begin
             sources_out[4] = {8'd0, 8'd0, 8'd0, 8'd0};
-        end
-    end
-
-    always @* begin
-        for (int i = 0;i<4;i++) begin
-            sources_out[i+5] = sm_long_buff[i];
         end
     end
 

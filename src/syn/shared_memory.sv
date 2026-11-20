@@ -6,17 +6,15 @@ interface memory_bus;
     logic [31:0] wdata;
     logic [31:0] rdata;
     logic        we;     // Write Enable
-    logic [31:0] fast_r_addr;
-    logic [127:0] fast_r_rdata;
 
     modport user (
-        output addr, wdata, we, fast_r_addr,
-        input  rdata, fast_r_rdata
+        output addr, wdata, we,
+        input  rdata
     );
 
     modport mem (
-        input  addr, wdata, we, fast_r_addr,
-        output rdata, fast_r_rdata
+        input  addr, wdata, we,
+        output rdata
     );
 
 endinterface
@@ -33,7 +31,6 @@ module memory
 
     always @* begin
         m.rdata = ram[m.addr];
-        m.fast_r_rdata = {ram[m.fast_r_addr], ram[m.fast_r_addr+1], ram[m.fast_r_addr+2], ram[m.fast_r_addr+3]};
     end
     
     always @(posedge clk_i) begin
